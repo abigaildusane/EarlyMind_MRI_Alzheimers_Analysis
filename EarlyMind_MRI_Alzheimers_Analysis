@@ -1,0 +1,155 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from PIL import Image
+import io
+
+# -----------------------------
+# 1) Load parquet
+# -----------------------------
+TRAIN_PATH = "/content/drive/MyDrive/AI 4 Alzheimer's/Datasets/MRI Dataset/train.parquet"  # <-- change if needed
+df = pd.read_parquet(TRAIN_PATH)
+
+print("Loaded:", df.shape)
+print("Columns:", df.columns.tolist())
+
+# -----------------------------
+# 2) Helper: read one image
+# -----------------------------
+def get_img_from_df(df, idx):
+    """
+    Returns a grayscale MRI image as a numpy array (uint8).
+    The parquet stores image bytes in df['image']['bytes'].
+    """
+    img_bytes = df.iloc[idx]["image"]["bytes"]
+    img = Image.open(io.BytesIO(img_bytes)).convert("L")  # grayscale
+    return np.array(img, dtype=np.uint8)
+
+# -----------------------------
+# 3) Compute brain pixels, CSF pixels, ratio, and risk
+# -----------------------------
+def compute_stats(img, csf_threshold=70):
+    """
+    brain_mask: pixels > 0 (not pure black background)
+    csf_mask: pixels < csf_threshold AND inside the brain
+    csf_ratio = csf_pixels / brain_pixels
+
+    Risk bands here are simple heuristics (for hackathon/exploration),
+    not clinical thresholds.
+    """
+    # Brain mask: ignore pure black background
+    brain_mask = img > 0
+    brain_pixels = int(brain_mask.sum())
+
+    # CSF mask: "dark" pixels within brain
+    csf_mask = (img < csf_threshold) & brain_mask
+    csf_pixels = int(csf_mask.sum())
+
+    csf_ratio = (csf_pixels / brain_pixels) if brain_pixels > 0 else 0.0
+
+    # risk range 
+    if csf_ratio >= 0.20:
+        risk = "High"
+    elif csf_ratio >= 0.16:
+        risk = "Medium"
+    elif csf_ratio < 0.10:
+        risk = "Likely Healthy"
+    else:
+        risk = "Medium"
+
+    return brain_mask, csf_mask, brain_pixels, csf_pixels, float(csf_ratio), risk
+
+# -----------------------------
+# 4) Build results table for all images
+# -----------------------------
+def build_table(df, csf_threshold=70):
+    rows = []
+    for idx in range(len(df)):
+        label = int(df.iloc[idx]["label"])
+        img = get_img_from_df(df, idx)
+
+        _, _, brain_pixels, csf_pixels, csf_ratio, risk = compute_stats(
+            img, csf_threshold=csf_threshold
+        )
+
+        rows.append({
+            "idx": idx,
+            "label": label,
+            "brain_pixels": brain_pixels,
+            "csf_pixels": csf_pixels,
+            "csf_ratio": csf_ratio,
+            "risk": risk,
+            "CSF_threshold_pixel_darker_than_intensity": csf_threshold
+        })
+
+    return pd.DataFrame(rows)
+
+# Global CSF threshold
+CSF_THRESHOLD = 70
+
+print("\nBuilding table... (this may take a bit for 5,000+ images)")
+csf_table = build_table(df, csf_threshold=CSF_THRESHOLD)
+
+print("\nTable preview (first 20 rows):")
+display(csf_table.head(20))
+
+print("\nRisk counts:")
+display(csf_table["risk"].value_counts())
+
+# -----------------------------
+# 5) Plot: CSF ratio vs label
+# -----------------------------
+plt.figure(figsize=(8, 5))
+plt.scatter(csf_table["label"], csf_table["csf_ratio"], alpha=0.5)
+plt.title("CSF Ratio vs Label")
+plt.xlabel("Label (0=Healthy → 3=Moderate AD)")
+plt.ylabel("CSF Ratio (csf_pixels / brain_pixels)")
+plt.xticks([0, 1, 2, 3])
+plt.grid(True, alpha=0.3)
+plt.show()
+
+# -----------------------------
+# 6) Show example images with numbers
+# -----------------------------
+def show_examples(df, table, n=6, cols=3, label=None, risk=None, csf_threshold=70):
+    """
+    Show n images from the table (optionally filtered by label or risk).
+    Each image shows idx, label, brain_pixels, csf_pixels, csf_ratio, risk.
+    """
+    subset = table.copy()
+    if label is not None:
+        subset = subset[subset["label"] == label]
+    if risk is not None:
+        subset = subset[subset["risk"] == risk]
+
+    subset = subset.head(n)
+
+    if len(subset) == 0:
+        print("No images found for this filter.")
+        return
+
+    rows = int(np.ceil(len(subset) / cols))
+    plt.figure(figsize=(4 * cols, 4 * rows))
+
+    for i, r in enumerate(subset.itertuples(index=False), start=1):
+        img = get_img_from_df(df, r.idx)
+
+        _, _, brain_pixels, csf_pixels, csf_ratio, risk_lbl = compute_stats(
+            img, csf_threshold=csf_threshold
+        )
+
+        plt.subplot(rows, cols, i)
+        plt.imshow(img, cmap="gray")
+        plt.axis("off")
+        plt.title(
+            f"idx={r.idx} label={r.label}\n"
+            f"brain={brain_pixels} csf={csf_pixels}\n"
+            f"ratio={csf_ratio:.3f} risk={risk_lbl}",
+            fontsize=9
+        )
+
+    plt.tight_layout()
+    plt.show()
+
+print("\nExample images (first 6):")
+show_examples(df, csf_table, n=6, cols=3, csf_threshold=CSF_THRESHOLD)
