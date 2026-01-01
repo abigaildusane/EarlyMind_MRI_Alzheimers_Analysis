@@ -36,3 +36,50 @@ Compute the CSF ratio for all MRI images and analyze how it varies across:
 - Early-stage Alzheimer’s
 - More advanced Alzheimer’s cases
 This allows to study early structural changes associated with Alzheimer’s disease.
+
+
+# How to Run the Program
+Requirements:
+- Python installed and the following libraries available
+- pip install numpy pandas matplotlib pillow pyarrow
+- Google Colab, these libraries are already installed.
+
+Dataset:
+- This project uses MRI images stored in a Parquet file.
+- Each row contains: image: MRI image bytes, label: Alzheimer’s stage, 0 = Healthy, 1 = Very Mild, 2 = Mild, 3 = Moderate
+- Dataset path in the code if needed: TRAIN_PATH = "path/to/train.parquet"
+
+# Identify CSF pixels
+- Pixels darker than a chosen intensity threshold (default: 70) inside the brain are treated as CSF.
+- Column name used in results: CSF_threshold_pixel_darker_than_intensity
+
+# Compute measurements
+- Brain pixel count
+- CSF pixel count
+- CSF ratio = csf_pixels / brain_pixels
+- Assign risk level (only trial indicators)
+- CSF Ratio	Risk Level: ≥ 0.20	High, ≥ 0.16	Medium, < 0.10	Likely Healthy
+
+# A results table
+- One row per MRI image
+- Includes index, label, pixel counts, CSF ratio, risk, and threshold
+
+# Visualize results
+- Scatter plot: CSF Ratio vs Alzheimer’s Label
+- Shows how CSF ratio varies across disease stages
+
+# Display example MRI images
+Shows sample images with:
+Brain pixels
+CSF pixels
+CSF ratio
+Risk category
+
+# Running the Code
+- Run program  in Google Colab / Jupyter Notebook.
+
+# You will see:
+- A table preview of results
+- Risk distribution
+- A CSF ratio vs label plot
+- Example MRI images with calculated values
